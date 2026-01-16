@@ -1,13 +1,12 @@
 """postpy2 extractors."""
 import logging
 import json
-import ntpath
+#import ntpath
 import os
-import re
-import ast
 from io import BytesIO
 
-import magic
+#import magic
+import mimetypes
 
 logger = logging.getLogger(__name__)
 
@@ -18,13 +17,11 @@ def extract_dict_from_raw_mode_data(raw):
     :param raw: jsondata
     :return: :extracted dict
     """
-    
     try:
-        raw_body_data = raw
-        raw_body_data = ast.literal_eval(raw_body_data)
-        return raw_body_data
-    except Exception as e:
-        return e
+        return json.loads(raw)
+    except json.decoder.JSONDecodeError:
+        return {}
+
 
 def exctact_dict_from_files(data):
     """extract files from dict data.
@@ -34,9 +31,11 @@ def exctact_dict_from_files(data):
     """
     if not os.path.isfile(data["src"]):
         raise Exception("File " + data["src"] + " does not exists")
-    mime = magic.Magic(mime=True)
-    file_mime = mime.from_file(data["src"])
-    file_name = ntpath.basename(data["src"])
+    #mime = magic.Magic(mime=True)
+    #file_mime = mime.from_file(data["src"])
+    mimetypes.init()
+    file_mime = mimetypes.types_map[os.path.splitext(data["src"])[1]]
+    file_name = os.path.basename(data["src"])
     with open(data["src"], "rb") as file_source:
         bytes_source = BytesIO(file_source.read())  # read bytes from file into memory
     return (
