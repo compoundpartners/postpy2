@@ -177,7 +177,15 @@ class PostRequest:
         logger.debug("%s data keys: %s", self.__class__.__name__, request_data.keys())
 
         if "body" in request_data and request_data["body"]["mode"] == "raw" and "raw" in request_data["body"]:
-            self.request_kwargs["json"] = extract_dict_from_raw_mode_data(request_data["body"]["raw"])
+            data = request_data["body"]["raw"]
+            if data:
+                json_data = extract_dict_from_raw_mode_data(data)
+                if json_data:
+                    self.request_kwargs["json"] = json_data
+                else:
+                    self.request_kwargs["data"] = data
+            if "options" in request_data["body"] and "raw" in request_data["body"]["options"]:
+                self.request_kwargs["params"] = request_data["body"]["options"]["raw"]
 
         if "body" in request_data and request_data["body"]["mode"] == "formdata" and "formdata" in request_data["body"]:
             (
@@ -228,6 +236,9 @@ class PostRequest:
         formatted_kwargs = self._handle_auth(formatted_kwargs, new_env)
         formatted_kwargs["url"] = verify_url(formatted_kwargs["url"])
         logger.info("formatted_kwargs: %s", formatted_kwargs)
+        session = formatted_kwargs.pop('session', None)
+        if session:
+            return session.request(**formatted_kwargs)
         return requests.request(**formatted_kwargs)
 
     def _handle_auth(self, formatted_kwargs, new_env):
@@ -271,6 +282,41 @@ class PostRequest:
                             auth_kwargs['signature_type'] = 'auth_header'
                 oauth1 = OAuth1(**auth_kwargs)
                 formatted_kwargs["auth"] = oauth1
+            elif auth_type.lower() == "oauth2":
+                from oauthlib.oauth2 import BackendApplicationClient
+                from requests_oauthlib import OAuth2Session
+                auth = auth.get(auth_type, {})
+                auth_kwargs = {}
+                auth_kwargs_keys = {
+                    'scope': 'scope',
+                    'clientSecret': 'client_secret',
+                    'clientId': 'client_id',
+                    'accessTokenUrl': 'token_url',
+                }
+                cache_key = 'outh2key'
+                for kwarg in auth:
+                    if 'key' in kwarg and 'value' in kwarg:
+                        key = kwarg['key']
+                        value = kwarg['value']
+                        if key in auth_kwargs_keys:
+                            auth_kwargs[auth_kwargs_keys[key]] = value
+                        cache_key += f'--{value}'
+                cache_key = cache_key[:240]
+
+                def get_token(key):
+                    from django.core.cache import cache
+                    cache.get(key)
+                def set_token(key, token):
+                    from django.core.cache import cache
+                    cache.get(key, token, token.get('expires_in', 3600))
+                
+                token = get_token(cache_key)
+                client = BackendApplicationClient(client_id=auth_kwargs.get('client_id'))
+                if not token:
+                    oauth = OAuth2Session(client=client)
+                    token = oauth.fetch_token(**auth_kwargs)
+                    set_token(cache_key, token)
+                formatted_kwargs["session"] = OAuth2Session(client=client, token=token)
             else:
                 logger.debug(pprint.pformat(auth))
                 raise Exception(f"Auth type not supported: {pprint.pformat(auth)}")
