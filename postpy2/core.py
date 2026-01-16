@@ -231,7 +231,7 @@ class PostRequest:
         return requests.request(**formatted_kwargs)
 
     def _handle_auth(self, formatted_kwargs, new_env):
-        auth = self.post_python.auth()
+        auth = format_object(self.post_python.auth(), new_env)
         if not isinstance(auth, dict):
             # mostly to handle mock
             logger.error("Auth type (%s) not supported: %s", type(auth), auth)
@@ -247,6 +247,28 @@ class PostRequest:
                 if len(auth[auth_type]) > 1:
                     raise Exception("More than one auth per type is not supported")
                 formatted_kwargs["headers"]["Authorization"] = f"Bearer {format_object(auth[auth_type][0]['value'], new_env)}"
+            elif auth_type.lower() == "oauth1":
+                from requests_oauthlib import OAuth1
+                auth = auth.get(auth_type, {})
+                auth_kwargs = {}
+                auth_kwargs_keys = {
+                    'consumerKey': 'client_key',
+                    'consumerSecret': 'client_secret',
+                    'token': 'resource_owner_key',
+                    'tokenSecret': 'resource_owner_secret',
+                    'realm': 'realm',
+                    'signatureMethod': 'signature_method',
+                }
+                for kwarg in auth:
+                    if 'key' in kwarg and 'value' in kwarg:
+                        key = kwarg['key']
+                        value = kwarg['value']
+                        if key in auth_kwargs_keys:
+                            auth_kwargs[auth_kwargs_keys[key]] = value
+                        elif key == 'addParamsToHeader' and value:
+                            auth_kwargs['signature_type'] = 'auth_header'
+                oauth1 = OAuth1(**auth_kwargs)
+                formatted_kwargs["auth"] = oauth1
             else:
                 logger.debug(pprint.pformat(auth))
                 raise Exception(f"Auth type not supported: {pprint.pformat(auth)}")
