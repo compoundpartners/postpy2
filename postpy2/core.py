@@ -242,6 +242,8 @@ class PostRequest:
             logger.debug(auth)
             if auth_type is None:
                 pass
+            elif auth_type.lower() == "noauth":
+                pass
             elif auth_type.lower() == "bearer":
                 # add to the headers
                 if len(auth[auth_type]) > 1:
